@@ -6,16 +6,16 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia codice
-COPY bot_games_channel.py ./
+# Copia codice aggiornato
+COPY bot_games_hourly.py ./
 
 # Scheduling con cron
 RUN apt-get update && apt-get install -y cron
 
-# Script di avvio
-COPY start.sh ./
-RUN chmod +x start.sh
+# Script di avvio ogni ora
+COPY start_hourly.sh ./
+RUN chmod +x start_hourly.sh
 
 EXPOSE 8080
 
-CMD ["./start.sh"]
+CMD ["./start_hourly.sh"]
