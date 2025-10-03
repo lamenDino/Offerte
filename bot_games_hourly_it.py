@@ -19,6 +19,7 @@ FRIENDS_CHAT_ID = os.getenv("FRIENDS_CHAT_ID")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info(f"FRIENDS_CHAT_ID = {FRIENDS_CHAT_ID}")
 
 class FreeGamesBot:
     def __init__(self):
@@ -214,9 +215,7 @@ class FreeGamesBot:
                 link_el = tile.find_parent("a", href=True)
                 title = title_el.text.strip() if title_el else "Gioco GOG"
                 href = link_el["href"] if link_el else None
-                link = (
-                    f"https://www.gog.com{href}" if href and href.startswith("/") else href or url
-                )
+                link = (f"https://www.gog.com{href}" if href and href.startswith("/") else href or url)
                 gid = f"gog_{title.lower().replace(' ', '_')}"
                 if gid not in self.sent and self.validate(link):
                     out.append({
