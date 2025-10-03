@@ -1,0 +1,269 @@
+import os
+import logging
+import asyncio
+import requests
+import feedparser
+import json
+from datetime import datetime
+from bs4 import BeautifulSoup
+from telegram import Bot
+from telegram.constants import ParseMode
+from dotenv import load_dotenv
+from urllib.parse import urlparse
+
+load_dotenv()
+
+# Config
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class FreeGamesBot:
+    def __init__(self):
+        self.bot = Bot(token=BOT_TOKEN)
+        self.sent_games_file = "sent_games.json"
+        self.sent_games = self.load_sent_games()
+
+    def load_sent_games(self):
+        """Carica giochi già inviati da file JSON"""
+        try:
+            with open(self.sent_games_file, 'r') as f:
+                return set(json.load(f))
+        except FileNotFoundError:
+            return set()
+
+    def save_sent_games(self):
+        """Salva giochi inviati su file JSON"""
+        with open(self.sent_games_file, 'w') as f:
+            json.dump(list(self.sent_games), f)
+
+    def validate_url(self, url):
+        """Valida se l'URL è raggiungibile e valido"""
+        try:
+            # Controlla formato URL
+            parsed = urlparse(url)
+            if not parsed.scheme or not parsed.netloc:
+                return False
+            
+            # Test connessione (timeout 10 secondi)
+            response = requests.head(url, timeout=10, allow_redirects=True)
+            
+            # Controlla status code
+            if response.status_code in [200, 301, 302]:
+                return True
+            
+            logger.warning(f"URL non valido (status {response.status_code}): {url}")
+            return False
+            
+        except requests.RequestException as e:
+            logger.warning(f"URL non raggiungibile: {url} - {e}")
+            return False
+
+    async def get_epic_games(self):
+        """Ottiene giochi gratuiti Epic Games con validazione URL"""
+        try:
+            url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
+            response = requests.get(url, timeout=15)
+            data = response.json()
+            
+            free_games = []
+            
+            # Naviga nella struttura JSON corretta
+            catalog = data.get('data', {}).get('Catalog', {})
+            search_store = catalog.get('searchStore', {})
+            elements = search_store.get('elements', [])
+            
+            for game in elements:
+                promotions = game.get('promotions')
+                if not promotions:
+                    continue
+                    
+                promotional_offers = promotions.get('promotionalOffers', [])
+                if not promotional_offers:
+                    continue
+                    
+                for promo in promotional_offers:
+                    offers = promo.get('promotionalOffers', [])
+                    if offers:
+                        title = game.get('title', '').strip()
+                        description = game.get('description', '')
+                        product_slug = game.get('productSlug', '')
+                        
+                        if not title or not product_slug:
+                            continue
+                            
+                        # Crea URL Epic Games Store
+                        store_url = f"https://store.epicgames.com/it/p/{product_slug}"
+                        
+                        # Valida URL prima di aggiungere
+                        if self.validate_url(store_url):
+                            # Crea ID univoco basato su titolo e piattaforma
+                            game_id = f"epic_{title.lower().replace(' ', '_')}"
+                            
+                            if game_id not in self.sent_games:
+                                free_games.append({
+                                    'id': game_id,
+                                    'title': title,
+                                    'description': description[:200] + "..." if len(description) > 200 else description,
+                                    'url': store_url,
+                                    'platform': 'Epic Games',
+                                    'end_date': offers[0].get('endDate', '')
+                                })
+            
+            return free_games
+            
+        except Exception as e:
+            logger.error(f"Errore Epic Games: {e}")
+            return []
+
+    async def get_steam_free_games(self):
+        """Ottiene giochi gratuiti Steam via RSS con validazione"""
+        try:
+            feed_url = "https://steamcommunity.com/groups/freegamesfinders/rss/"
+            feed = feedparser.parse(feed_url)
+            
+            free_games = []
+            for entry in feed.entries[:5]:
+                title = entry.get('title', '').strip()
+                link = entry.get('link', '')
+                summary = entry.get('summary', '')
+                
+                if not title or not link:
+                    continue
+                    
+                # Filtra solo post relativi a giochi gratuiti
+                if any(keyword in title.lower() for keyword in ['free', 'gratis', 'steam']):
+                    # Valida URL
+                    if self.validate_url(link):
+                        game_id = f"steam_{title.lower().replace(' ', '_')[:50]}"
+                        
+                        if game_id not in self.sent_games:
+                            free_games.append({
+                                'id': game_id,
+                                'title': title,
+                                'description': summary[:200] + "..." if len(summary) > 200 else summary,
+                                'url': link,
+                                'platform': 'Steam Community',
+                                'published': entry.get('published', '')
+                            })
+            
+            return free_games
+            
+        except Exception as e:
+            logger.error(f"Errore Steam: {e}")
+            return []
+
+    async def get_gamerpower_games(self):
+        """Ottiene giochi da GamerPower RSS con validazione"""
+        try:
+            feed_url = "https://www.gamerpower.com/rss/pc"
+            feed = feedparser.parse(feed_url)
+            
+            free_games = []
+            for entry in feed.entries[:5]:
+                title = entry.get('title', '').strip()
+                link = entry.get('link', '')
+                summary = entry.get('summary', '')
+                
+                if not title or not link:
+                    continue
+                    
+                # Valida URL
+                if self.validate_url(link):
+                    game_id = f"gamerpower_{title.lower().replace(' ', '_')[:50]}"
+                    
+                    if game_id not in self.sent_games:
+                        free_games.append({
+                            'id': game_id,
+                            'title': title,
+                            'description': summary[:200] + "..." if len(summary) > 200 else summary,
+                            'url': link,
+                            'platform': 'PC (Varie Piattaforme)',
+                            'published': entry.get('published', '')
+                        })
+            
+            return free_games
+            
+        except Exception as e:
+            logger.error(f"Errore GamerPower: {e}")
+            return []
+
+    def format_game_message(self, game):
+        """Formatta messaggio per Telegram"""
+        message = f"🎮 **{game['title']}**\n\n"
+        
+        if game['description']:
+            message += f"📝 {game['description']}\n\n"
+        
+        message += f"🏷️ Piattaforma: {game['platform']}\n"
+        
+        if game.get('end_date'):
+            message += f"⏰ Scade: {game['end_date']}\n"
+        elif game.get('published'):
+            message += f"📅 Pubblicato: {game['published']}\n"
+        
+        message += f"\n🔗 [Ottieni Gratis]({game['url']})\n\n"
+        message += f"💬 {CHANNEL_USERNAME}"
+        
+        return message
+
+    async def send_hourly_update(self):
+        """Invia aggiornamento ogni ora"""
+        try:
+            logger.info("🔄 Controllo aggiornamenti ogni ora...")
+            
+            # Ottieni giochi da tutte le fonti
+            epic_games = await self.get_epic_games()
+            steam_games = await self.get_steam_free_games()
+            gamerpower_games = await self.get_gamerpower_games()
+            
+            all_games = epic_games + steam_games + gamerpower_games
+            
+            if not all_games:
+                logger.info("Nessun nuovo gioco trovato.")
+                return
+            
+            logger.info(f"Trovati {len(all_games)} nuovi giochi da inviare")
+            
+            # Invia ogni nuovo gioco
+            sent_count = 0
+            for game in all_games:
+                try:
+                    message = self.format_game_message(game)
+                    
+                    await self.bot.send_message(
+                        chat_id=CHANNEL_USERNAME,
+                        text=message,
+                        parse_mode=ParseMode.MARKDOWN,
+                        disable_web_page_preview=False
+                    )
+                    
+                    # Aggiungi a lista inviati
+                    self.sent_games.add(game['id'])
+                    sent_count += 1
+                    
+                    logger.info(f"✅ Inviato: {game['title']}")
+                    
+                    # Rate limiting
+                    await asyncio.sleep(3)
+                    
+                except Exception as e:
+                    logger.error(f"Errore invio {game['title']}: {e}")
+            
+            # Salva stato
+            self.save_sent_games()
+            
+            if sent_count > 0:
+                logger.info(f"📤 Inviati {sent_count} giochi al canale")
+            
+        except Exception as e:
+            logger.error(f"Errore aggiornamento: {e}")
+
+async def main():
+    bot = FreeGamesBot()
+    await bot.send_hourly_update()
+
+if __name__ == "__main__":
+    asyncio.run(main())
