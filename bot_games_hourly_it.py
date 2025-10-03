@@ -38,15 +38,29 @@ class FreeGamesBot:
             json.dump(list(self.sent_games), f)
 
     def validate_url(self, url):
+        """Valida se l'URL esiste anche se bloccato da 403"""
         try:
             parsed = urlparse(url)
             if not parsed.scheme or not parsed.netloc:
                 return False
-            response = requests.head(url, timeout=10, allow_redirects=True)
-            if response.status_code in [200, 301, 302]:
+
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/116.0.0.0 Safari/537.36"
+                )
+            }
+            
+            # Prova HEAD prima
+            resp = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+            if resp.status_code in (200, 301, 302, 403):
                 return True
-            logger.warning(f"URL non valido (status {response.status_code}): {url}")
-            return False
+
+            # Se HEAD fallisce, prova GET breve
+            resp = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+            return resp.status_code in (200, 301, 302, 403)
+
         except requests.RequestException as e:
             logger.warning(f"URL non raggiungibile: {url} - {e}")
             return False
@@ -120,59 +134,51 @@ class FreeGamesBot:
     async def get_steam_free_games(self):
         """Ottiene giochi gratuiti Steam da SteamDB con data di fine offerta"""
         try:
-            # Usa SteamDB API per promozioni gratuite
-            url = "https://steamdb.info/api/GetPriceChanges/?appType=1&hasDiscount=1&isFree=1"
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            response = requests.get(url, headers=headers, timeout=15)
+            # Usa feed RSS di IsThereAnyDeal per offerte gratuite
+            feed_url = "https://isthereanydeal.com/rss/deals/free/"
+            feed = feedparser.parse(feed_url)
             
-            # Fallback: usa feed RSS di IsThereAnyDeal per offerte gratuite
-            if response.status_code != 200:
-                feed_url = "https://isthereanydeal.com/rss/deals/free/"
-                feed = feedparser.parse(feed_url)
+            free_games = []
+            for entry in feed.entries[:5]:
+                title = entry.get('title', '').strip()
+                link = entry.get('link', '')
+                summary = entry.get('summary', '')
                 
-                free_games = []
-                for entry in feed.entries[:5]:
-                    title = entry.get('title', '').strip()
-                    link = entry.get('link', '')
-                    summary = entry.get('summary', '')
+                if not title or not link or 'steam' not in title.lower():
+                    continue
+                
+                # Estrai link Steam dalla descrizione
+                steam_link = link
+                if 'steam' not in link.lower():
+                    # Cerca link Steam nella descrizione
+                    soup = BeautifulSoup(summary, 'html.parser')
+                    steam_links = [a['href'] for a in soup.find_all('a', href=True) if 'store.steampowered.com' in a['href']]
+                    if steam_links:
+                        steam_link = steam_links[0]
+                
+                if self.validate_url(steam_link):
+                    game_id = f"steam_{title.lower().replace(' ', '_')[:50]}"
                     
-                    if not title or not link or 'steam' not in title.lower():
-                        continue
-                    
-                    # Estrai link Steam dalla descrizione
-                    steam_link = link
-                    if 'steam' not in link.lower():
-                        # Cerca link Steam nella descrizione
-                        soup = BeautifulSoup(summary, 'html.parser')
-                        steam_links = [a['href'] for a in soup.find_all('a', href=True) if 'store.steampowered.com' in a['href']]
-                        if steam_links:
-                            steam_link = steam_links[0]
-                    
-                    if self.validate_url(steam_link):
-                        game_id = f"steam_{title.lower().replace(' ', '_')[:50]}"
+                    if game_id not in self.sent_games:
+                        # Data pubblicazione in italiano
+                        published_date = ""
+                        if entry.get('published'):
+                            try:
+                                dt = datetime.strptime(entry['published'], '%a, %d %b %Y %H:%M:%S %Z')
+                                published_date = dt.strftime('%d/%m/%Y')
+                            except:
+                                pass
                         
-                        if game_id not in self.sent_games:
-                            # Data pubblicazione in italiano
-                            published_date = ""
-                            if entry.get('published'):
-                                try:
-                                    dt = datetime.strptime(entry['published'], '%a, %d %b %Y %H:%M:%S %Z')
-                                    published_date = dt.strftime('%d/%m/%Y')
-                                except:
-                                    pass
-                            
-                            free_games.append({
-                                'id': game_id,
-                                'title': title,
-                                'description': "Offerta gratuita disponibile su Steam per un tempo limitato.",
-                                'url': steam_link,
-                                'platform': 'Steam',
-                                'end_date': "Fino ad esaurimento scorte" if not published_date else f"Dal {published_date}"
-                            })
-                
-                return free_games
+                        free_games.append({
+                            'id': game_id,
+                            'title': title,
+                            'description': "Offerta gratuita disponibile su Steam per un tempo limitato.",
+                            'url': steam_link,
+                            'platform': 'Steam',
+                            'end_date': "Fino ad esaurimento scorte" if not published_date else f"Dal {published_date}"
+                        })
             
-            return []
+            return free_games
             
         except Exception as e:
             logger.error(f"Errore Steam: {e}")
