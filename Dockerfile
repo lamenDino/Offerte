@@ -6,8 +6,8 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia codice aggiornato
-COPY bot_games_hourly.py ./
+# Copia codice aggiornato con traduzioni italiane
+COPY bot_games_hourly_it.py ./
 
 # Scheduling con cron
 RUN apt-get update && apt-get install -y cron

@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Crea crontab per esecuzione ogni ora
-echo "0 * * * * cd /app && python bot_games_hourly.py" | crontab -
+echo "0 * * * * cd /app && python bot_games_hourly_it.py" | crontab -
 
 # Avvia cron
 cron
 
 # Test iniziale
-python bot_games_hourly.py
+python bot_games_hourly_it.py
 
 # Health check server semplice
 python -c "
