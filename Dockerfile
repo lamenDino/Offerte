@@ -8,7 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia codice
 COPY bot_games_channel.py ./
-COPY .env ./
 
 # Scheduling con cron
 RUN apt-get update && apt-get install -y cron
