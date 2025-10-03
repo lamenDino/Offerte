@@ -15,6 +15,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
+FRIENDS_CHAT_ID = os.getenv("FRIENDS_CHAT_ID")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,9 +58,9 @@ class FreeGamesBot:
                 "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions",
                 timeout=15
             ).json()
-            elems = data.get("data", {}) \
-                        .get("Catalog", {}) \
-                        .get("searchStore", {}) \
+            elems = data.get("data", {})\
+                        .get("Catalog", {})\
+                        .get("searchStore", {})\
                         .get("elements", [])
             for g in elems:
                 promotions = g.get("promotions") or {}
@@ -214,9 +215,7 @@ class FreeGamesBot:
                 title = title_el.text.strip() if title_el else "Gioco GOG"
                 href = link_el["href"] if link_el else None
                 link = (
-                    f"https://www.gog.com{href}"
-                    if href and href.startswith("/")
-                    else href or url
+                    f"https://www.gog.com{href}" if href and href.startswith("/") else href or url
                 )
                 gid = f"gog_{title.lower().replace(' ', '_')}"
                 if gid not in self.sent and self.validate(link):
@@ -252,31 +251,29 @@ class FreeGamesBot:
             logger.info("Nessun nuovo gioco gratuito trovato.")
             return
 
-        sent_count = 0
+        parts = ["🎮 *Aggiornamento Giochi Gratuiti* 🎮\n"]
         for g in games:
-            if g["id"] in self.sent:
-                continue
-            msg = (
-                f"🎮 **{g['title']}**\n\n"
-                f"📝 {g['description']}\n\n"
-                f"🏷️ Piattaforma: {g['platform']}\n"
-                f"⏰ Scade: {g['end_date']}\n\n"
-                f"🔗 [Scarica Gratis]({g['url']})\n\n"
-                f"💬 {CHANNEL_USERNAME}"
+            parts.append(
+                f"*{g['title']}*  \n"
+                f"_{g['platform']}_ – Scade: {g['end_date']}  \n"
+                f"[Scarica Gratis]({g['url']})\n"
             )
-            try:
-                await self.bot.send_message(
-                    chat_id=CHANNEL_USERNAME,
-                    text=msg,
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                self.sent.add(g["id"])
-                sent_count += 1
-                await asyncio.sleep(3)
-            except Exception as e:
-                logger.error(f"Invio fallito {g['title']}: {e}")
-        self.save_sent()
-        logger.info(f"Inviati {sent_count} giochi")
+        text = "\n".join(parts)
+
+        await self.bot.send_message(
+            chat_id=CHANNEL_USERNAME,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=False
+        )
+
+        if FRIENDS_CHAT_ID:
+            await self.bot.send_message(
+                chat_id=FRIENDS_CHAT_ID,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=False
+            )
 
 async def main():
     bot = FreeGamesBot()
