@@ -9,11 +9,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Installa dipendenze Python
-COPY requirements_v2.txt ./
-RUN pip install --no-cache-dir -r requirements_v2.txt
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia files applicazione
-COPY bot_games_hourly_it_v2.py ./bot_games_hourly_it.py
+COPY bot_games_hourly_it.py ./bot_games_hourly_it.py
 COPY start_hourly.sh ./
 
 # Rendi eseguibile lo script di avvio
