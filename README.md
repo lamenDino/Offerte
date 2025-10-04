@@ -1,47 +1,66 @@
-# Canale Telegram Automatico per Giochi PC Gratuiti
+# Bot Telegram per Giochi Gratuiti
 
-## File inclusi:
-- `requirements.txt` - Dipendenze Python
-- `.env` - Variabili di ambiente (MODIFICA PRIMA DI USARE)
-- `bot_games_channel.py` - Bot principale per il canale
-- `Dockerfile` - Configurazione container Docker
-- `start.sh` - Script di avvio con cron
+Bot Telegram che monitora automaticamente giochi gratuiti da diverse piattaforme e li pubblica ogni ora.
 
-## Setup veloce:
+## Funzionalità
 
-### 1. Configura .env
-Modifica il file `.env` con:
-```
-BOT_TOKEN=il_tuo_token_da_botfather
-CHANNEL_USERNAME=@iltuocanalename
-```
+- **Monitoraggio automatico ogni ora** di:
+  - Epic Games Store
+  - Steam (tramite IsThereAnyDeal)
+  - GamerPower
+  - Twitch Prime Gaming
+  - GOG
+  - Battle.net (placeholder)
+  - Riot Games (placeholder)
 
-### 2. Crea canale Telegram
-- Nuovo canale pubblico
-- Aggiungi il bot comme amministratore
-- Permessi: "Invia messaggi"
+- **Anti-duplicati**: Traccia i giochi già inviati per evitare spam
+- **Validazione link**: Verifica che i link siano accessibili
+- **Descrizioni in italiano**: Ogni gioco include una breve descrizione
+- **Date di scadenza**: Formattate in stile italiano (dd/mm/yyyy)
+- **Health check**: Endpoint per monitorare lo stato del servizio
 
-### 3. Deploy su Render
-- Carica tutti i file su GitHub
-- Connetti repository a Render
-- Crea Web Service
-- Aggiungi variabili ambiente in Render Dashboard
+## Setup
 
-### 4. Test
-Il bot invierà automaticamente:
-- **Ogni giovedì alle 18:00** aggiornamenti completi
-- Giochi da Epic Games, Steam, GamerPower
-- Formattatzione automatica con link
+1. **Variabili d'ambiente** (crea un file `.env`):
+   ```
+   BOT_TOKEN=il_tuo_bot_token_telegram
+   CHANNEL_USERNAME=@nome_del_tuo_canale
+   FRIENDS_CHAT_ID=id_della_chat_amici  # Opzionale
+   ```
 
-## Fonti automatiche:
-- ✅ Epic Games Store (API ufficiale)
-- ✅ Steam (via RSS community)  
-- ✅ GamerPower (RSS universale)
-- ✅ Filtri anti-duplicati
-- ✅ Rate limiting per evitare ban
+2. **Build e run con Docker**:
+   ```bash
+   docker build -t games-bot .
+   docker run -d --env-file .env -p 8080:8080 games-bot
+   ```
 
-## Schedule:
-- **Ogni giovedì 18:00 CEST** = post settimanale
-- Modifica cron in `start.sh` per cambiare orari
+3. **Deploy su Render**:
+   - Collega il repository GitHub
+   - Imposta le variabili d'ambiente nel dashboard Render
+   - Il servizio si avvierà automaticamente
 
-Tutti i file sono pronti per il deploy immediato!
+## Monitoraggio
+
+- **Health check**: `http://localhost:8080/` - Verifica stato servizio
+- **Log cron**: `http://localhost:8080/logs` - Visualizza log delle esecuzioni
+
+## File generati
+
+- `sent_games.json`: Traccia dei giochi già inviati per evitare duplicati
+- `/var/log/cron.log`: Log delle esecuzioni programmate
+
+## Funzionalità anti-spam
+
+Il bot mantiene un file JSON con gli ID univoci dei giochi già inviati. Ogni piattaforma ha un formato ID specifico:
+- Epic: `epic_{slug}`
+- Steam: `steam_{hash(link)}`
+- GamerPower: `gp_{id}`
+- Prime Gaming: `prime_{titolo_normalizzato}`
+- GOG: `gog_{titolo_normalizzato}`
+
+Questo garantisce che lo stesso gioco non venga mai inviato due volte.
+
+## Scheduling
+
+Il cron job è configurato per eseguire lo script ogni ora (0 * * * *).
+Il container rimane attivo grazie al health check server sulla porta 8080.

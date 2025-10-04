@@ -59,28 +59,35 @@ class FreeGamesBot:
                 "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions",
                 timeout=15
             ).json()
+            
             elems = data.get("data", {})\
-                        .get("Catalog", {})\
-                        .get("searchStore", {})\
-                        .get("elements", [])
+                .get("Catalog", {})\
+                .get("searchStore", {})\
+                .get("elements", [])
+            
             for g in elems:
                 promotions = g.get("promotions") or {}
                 for po in promotions.get("promotionalOffers", []):
                     offs = po.get("promotionalOffers") or []
                     if not offs:
                         continue
+                    
                     title = g.get("title", "").strip()
                     slug = g.get("productSlug", "")
                     if not title or not slug:
                         continue
+                    
                     link = f"https://store.epicgames.com/it/p/{slug}"
                     if not self.validate(link):
                         continue
+                    
                     gid = f"epic_{slug}"
                     if gid in self.sent:
                         continue
+                    
                     desc = g.get("description") or "Gioco gratuito per tempo limitato."
                     desc = desc[:200] + "..." if len(desc) > 200 else desc
+                    
                     end = ""
                     ed = offs[0].get("endDate", "")
                     if ed:
@@ -89,6 +96,7 @@ class FreeGamesBot:
                             end = dt.strftime("%d/%m/%Y alle %H:%M")
                         except:
                             pass
+                    
                     out.append({
                         "id": gid,
                         "title": title,
@@ -113,14 +121,18 @@ class FreeGamesBot:
                     for a in soup.find_all("a", href=True)
                     if "store.steampowered.com" in a["href"]
                 ]
+                
                 if not links:
                     continue
+                
                 link = links[0]
                 if not self.validate(link):
                     continue
+                
                 gid = f"steam_{hash(link)}"
                 if gid in self.sent:
                     continue
+                
                 out.append({
                     "id": gid,
                     "title": title,
@@ -140,18 +152,23 @@ class FreeGamesBot:
                 "https://www.gamerpower.com/api/giveaways?platform=pc&type=game",
                 timeout=15
             ).json()
+            
             for g in data[:5]:
                 title = g.get("title", "").strip()
                 link = g.get("open_giveaway") or g.get("gamerpower_url")
                 if not title or not link:
                     continue
+                
                 if not self.validate(link):
                     continue
+                
                 gid = f"gp_{g.get('id')}"
                 if gid in self.sent:
                     continue
+                
                 desc = g.get("description") or "Giveaway gratuito disponibile."
                 desc = desc[:200] + "..." if len(desc) > 200 else desc
+                
                 end = "Data non specificata"
                 ed = g.get("end_date", "")
                 if ed and ed != "N/A":
@@ -160,6 +177,7 @@ class FreeGamesBot:
                         end = dt.strftime("%d/%m/%Y alle %H:%M")
                     except:
                         end = ed
+                
                 out.append({
                     "id": gid,
                     "title": title,
@@ -179,15 +197,18 @@ class FreeGamesBot:
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(r.text, "html.parser")
+            
             items = soup.find_all("div", class_="loot-item")
             for item in items:
                 title_el = item.find("h3")
                 desc_el = item.find("p", class_="description")
                 link_el = item.find("a", href=True)
+                
                 title = title_el.text.strip() if title_el else "Gioco Prime"
                 desc = desc_el.text.strip() if desc_el else "Gioco gratis con Prime Gaming"
                 href = link_el["href"] if link_el else None
                 link = f"https://gaming.amazon.com{href}" if href else url
+                
                 gid = f"prime_{title.lower().replace(' ', '_')}"
                 if gid not in self.sent and self.validate(link):
                     out.append({
@@ -209,13 +230,16 @@ class FreeGamesBot:
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(r.text, "html.parser")
+            
             tiles = soup.find_all("div", class_="product-tile")
             for tile in tiles:
                 title_el = tile.find("h3", class_="product-title")
                 link_el = tile.find_parent("a", href=True)
+                
                 title = title_el.text.strip() if title_el else "Gioco GOG"
                 href = link_el["href"] if link_el else None
                 link = (f"https://www.gog.com{href}" if href and href.startswith("/") else href or url)
+                
                 gid = f"gog_{title.lower().replace(' ', '_')}"
                 if gid not in self.sent and self.validate(link):
                     out.append({
@@ -250,13 +274,22 @@ class FreeGamesBot:
             logger.info("Nessun nuovo gioco gratuito trovato.")
             return
 
+        # Aggiungi i nuovi giochi al set dei giochi già inviati
+        for game in games:
+            self.sent.add(game["id"])
+        
+        # Salva il file con i giochi già inviati
+        self.save_sent()
+        logger.info(f"Salvati {len(games)} nuovi giochi nel tracking duplicati.")
+
         parts = ["🎮 *Aggiornamento Giochi Gratuiti* 🎮\n"]
         for g in games:
             parts.append(
-                f"*{g['title']}*  \n"
-                f"_{g['platform']}_ – Scade: {g['end_date']}  \n"
+                f"*{g['title']}* \n"
+                f"_{g['platform']}_ – Scade: {g['end_date']} \n"
                 f"[Scarica Gratis]({g['url']})\n"
             )
+
         text = "\n".join(parts)
 
         await self.bot.send_message(
