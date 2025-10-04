@@ -2,9 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Installa dipendenze di sistema
+# Installa dipendenze di sistema per PIL
 RUN apt-get update && apt-get install -y \
     cron \
+    libjpeg-dev \
+    zlib1g-dev \
+    libfreetype6-dev \
+    liblcms2-dev \
+    libopenjp2-7-dev \
+    libtiff5-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Installa dipendenze Python
