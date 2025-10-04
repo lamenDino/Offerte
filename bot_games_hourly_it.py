@@ -540,7 +540,7 @@ class FreeGamesBot:
 
         text = "\n".join(parts)
 
-        # Invia SEMPRE con immagine
+        # Invia SEMPRE con immagine - CORRETTO: senza disable_web_page_preview
         try:
             with open(collage_path, 'rb') as photo:
                 # Canale principale
@@ -548,8 +548,7 @@ class FreeGamesBot:
                     chat_id=CHANNEL_USERNAME,
                     photo=photo,
                     caption=text,
-                    parse_mode=ParseMode.MARKDOWN,
-                    disable_web_page_preview=True
+                    parse_mode=ParseMode.MARKDOWN
                 )
                 
                 # Chat amici se configurata
@@ -559,8 +558,7 @@ class FreeGamesBot:
                         chat_id=FRIENDS_CHAT_ID,
                         photo=photo,
                         caption=text,
-                        parse_mode=ParseMode.MARKDOWN,
-                        disable_web_page_preview=True
+                        parse_mode=ParseMode.MARKDOWN
                     )
             
             logger.info("✅ Messaggio inviato CON collage immagini")
@@ -570,7 +568,31 @@ class FreeGamesBot:
             
         except Exception as e:
             logger.error(f"❌ Errore invio con immagine: {e}")
-            # Se fallisce, non inviare nulla per evitare messaggi senza immagine
+            # Fallback: invia solo testo
+            await self._send_text_only(text)
+
+    async def _send_text_only(self, text):
+        """Fallback senza immagine"""
+        try:
+            await self.bot.send_message(
+                chat_id=CHANNEL_USERNAME,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True
+            )
+
+            if FRIENDS_CHAT_ID:
+                await self.bot.send_message(
+                    chat_id=FRIENDS_CHAT_ID,
+                    text=text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    disable_web_page_preview=True
+                )
+            
+            logger.info("✅ Messaggio inviato SENZA immagine (fallback)")
+            
+        except Exception as e:
+            logger.error(f"❌ Errore invio fallback: {e}")
 
 async def main():
     bot = FreeGamesBot()
