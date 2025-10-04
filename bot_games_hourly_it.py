@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 from urllib.parse import urlparse
 from PIL import Image, ImageDraw, ImageFont
 import io
-import hashlib
 
 load_dotenv()
 
@@ -44,25 +43,95 @@ class FreeGamesBot:
 
     def normalize_title(self, title):
         """Normalizza il titolo per rilevare duplicati cross-platform"""
-        # Rimuovi tutto dopo "Giveaway" se presente
-        if "giveaway" in title.lower():
-            title = re.sub(r'\s*giveaway.*$', '', title, flags=re.IGNORECASE)
+        # Rimuovi tutto dopo "Giveaway" se presente (case insensitive)
+        title = re.sub(r'\s*giveaway.*$', '', title, flags=re.IGNORECASE)
         
         # Rimuovi parentesi e contenuto
         title = re.sub(r'\s*\([^)]*\)\s*', '', title)
         
-        # Normalizza caratteri speciali e spazi
+        # Rimuovi caratteri speciali e normalizza
         normalized = re.sub(r'[^\w\s]', '', title.lower())
         normalized = re.sub(r'\s+', ' ', normalized).strip()
         
-        # Rimuovi suffissi comuni alla fine
+        # Rimuovi suffissi comuni
         suffixes = ['free', 'gratis', 'epic games', 'steam', 'edition', 
-                   'deluxe', 'premium', 'standard', 'ultimate', 'complete']
+                   'deluxe', 'premium', 'standard', 'ultimate', 'complete', 'pack']
         for suffix in suffixes:
             if normalized.endswith(' ' + suffix):
                 normalized = normalized[:-len(' ' + suffix)]
         
         return normalized
+
+    def clean_title(self, title):
+        """Pulisce il titolo per la visualizzazione"""
+        # Rimuovi "Giveaway" dalla fine
+        title = re.sub(r'\s*giveaway\s*$', '', title, flags=re.IGNORECASE)
+        return title.strip()
+
+    def translate_description(self, text):
+        """Traduce descrizioni inglesi in italiano usando regex patterns"""
+        if not text or len(text) < 10:
+            return text
+            
+        # Pattern comuni inglese -> italiano
+        translations = {
+            r'\bfree\b': 'gratuito',
+            r'\bgame\b': 'gioco',
+            r'\bgrab\b': 'scarica',
+            r'\bcheck it out\b': 'provalo',
+            r'\bdon\'t miss it\b': 'non perdertelo',
+            r'\bavailable\b': 'disponibile',
+            r'\bdownload\b': 'scarica',
+            r'\bfor free\b': 'gratuitamente',
+            r'\bright now\b': 'ora',
+            r'\bfirst person\b': 'prima persona',
+            r'\bopen world\b': 'mondo aperto',
+            r'\bsurvival\b': 'sopravvivenza',
+            r'\bcrafting\b': 'costruzione',
+            r'\badventure\b': 'avventura',
+            r'\bdangerous\b': 'pericoloso',
+            r'\btop-down shooter\b': 'sparatutto dall\'alto',
+            r'\bzombies\b': 'zombie',
+            r'\bcool graphics\b': 'grafica accattivante',
+            r'\bnarrative\b': 'narrativo',
+            r'\bexperience life\b': 'vivi la vita',
+            r'\bmafia\b': 'mafia',
+            r'\btrains\b': 'treni',
+            r'\blearn\b': 'impara',
+            r'\binclude\b': 'include',
+            r'\btraining center\b': 'centro addestramento',
+            r'\bstandalone version\b': 'versione autonoma'
+        }
+        
+        result = text
+        for eng_pattern, ita_word in translations.items():
+            result = re.sub(eng_pattern, ita_word, result, flags=re.IGNORECASE)
+        
+        # Se ancora molto inglese, usa descrizione personalizzata
+        english_indicators = ['you', 'the', 'and', 'with', 'for', 'this', 'that', 'your']
+        english_count = sum(1 for word in english_indicators if word in result.lower())
+        
+        if english_count >= 3:
+            return self.get_custom_description_by_title(text)
+        
+        return result
+
+    def get_custom_description_by_title(self, original_title_or_desc):
+        """Genera descrizioni personalizzate basate sul contenuto"""
+        text = original_title_or_desc.lower()
+        
+        if 'zomborg' in text or 'zombie' in text:
+            return "Sparatutto dall'alto ambientato in un mondo pieno di zombie con grafica accattivante."
+        elif 'nightingale' in text:
+            return "Gioco di sopravvivenza cooperativo in prima persona ambientato nei pericolosi Reami delle Fate."
+        elif 'blue wednesday' in text or 'jazz' in text:
+            return "Avventura narrativa 2D che esplora il mondo del jazz con atmosfere uniche."
+        elif 'whiskey mafia' in text or 'mafia' in text:
+            return "Avventura 2D dove vivi la vita nella mafia con una storia coinvolgente."
+        elif 'train sim' in text or 'trains' in text:
+            return "Simulatore di treni realistico con centro addestramento e diversi treni da imparare."
+        else:
+            return "Gioco gratuito con contenuti di qualità disponibile per tempo limitato."
 
     def validate(self, url):
         try:
@@ -79,74 +148,102 @@ class FreeGamesBot:
             return False
 
     def get_game_cover_image(self, title, platform):
-        """Scarica l'immagine di copertina del gioco"""
+        """Scarica immagine copertina o crea placeholder"""
         try:
-            # Prova con Steam Store API
-            if platform.lower() != "steam":
-                search_url = f"https://store.steampowered.com/api/storesearch/?term={title}&l=italian&cc=IT"
-                response = requests.get(search_url, timeout=10)
-                data = response.json()
-                
-                if data.get('items'):
-                    item = data['items'][0]
-                    image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{item['id']}/header.jpg"
-                    img_response = requests.get(image_url, timeout=10)
-                    if img_response.status_code == 200:
-                        return Image.open(io.BytesIO(img_response.content))
+            # Cerca su Steam Store API
+            search_url = f"https://store.steampowered.com/api/storesearch/?term={title}&l=italian&cc=IT"
+            response = requests.get(search_url, timeout=10)
+            data = response.json()
             
-            # Fallback: immagine placeholder
+            if data.get('items'):
+                item = data['items'][0]
+                image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{item['id']}/header.jpg"
+                img_response = requests.get(image_url, timeout=10)
+                if img_response.status_code == 200:
+                    img = Image.open(io.BytesIO(img_response.content))
+                    return img.resize((300, 140))
+            
+            # Placeholder con titolo
             placeholder = Image.new('RGB', (300, 140), color='#2C2F36')
             draw = ImageDraw.Draw(placeholder)
             
-            try:
-                font = ImageFont.load_default()
-                # Scrivi il titolo del gioco
-                bbox = draw.textbbox((0, 0), title, font=font)
+            # Usa font di default
+            font = ImageFont.load_default()
+            
+            # Spezza il titolo in più righe se troppo lungo
+            words = title.split()
+            lines = []
+            current_line = []
+            
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                if bbox[2] - bbox[0] < 250:  # larghezza massima
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        lines.append(word)
+            
+            if current_line:
+                lines.append(' '.join(current_line))
+            
+            # Centra il testo verticalmente
+            total_height = len(lines) * 20
+            start_y = (140 - total_height) // 2
+            
+            for i, line in enumerate(lines[:4]):  # Max 4 righe
+                bbox = draw.textbbox((0, 0), line, font=font)
                 text_width = bbox[2] - bbox[0]
-                text_height = bbox[3] - bbox[1]
                 x = (300 - text_width) // 2
-                y = (140 - text_height) // 2
-                draw.text((x, y), title, fill='white', font=font)
-            except:
-                draw.text((50, 60), title[:20], fill='white')
+                y = start_y + i * 20
+                draw.text((x, y), line, fill='white', font=font)
             
             return placeholder
             
         except Exception as e:
-            logger.warning(f"Errore scaricamento immagine per {title}: {e}")
-            # Immagine placeholder di emergenza
+            logger.warning(f"Errore immagine per {title}: {e}")
+            # Placeholder semplice
             placeholder = Image.new('RGB', (300, 140), color='#7289DA')
+            draw = ImageDraw.Draw(placeholder)
+            draw.text((50, 60), title[:15], fill='white')
             return placeholder
 
     def create_games_collage(self, games):
-        """Crea un'immagine collage con le copertine dei giochi"""
+        """Crea collage con copertine"""
         try:
             if not games:
                 return None
                 
-            # Calcola dimensioni
+            # Dimensioni
             cols = 2
             rows = (len(games) + cols - 1) // cols
             cover_width, cover_height = 300, 140
             spacing = 20
             
             total_width = cols * cover_width + (cols - 1) * spacing + 40
-            total_height = rows * cover_height + (rows - 1) * spacing + 80
+            total_height = rows * cover_height + (rows - 1) * spacing + 100
             
             # Crea immagine base
             collage = Image.new('RGB', (total_width, total_height), color='#36393F')
-            
-            # Aggiungi titolo
             draw = ImageDraw.Draw(collage)
-            try:
-                title_font = ImageFont.load_default()
-                title_text = f"🎮 {len(games)} Giochi Gratuiti Disponibili"
-                bbox = draw.textbbox((0, 0), title_text, font=title_font)
-                title_width = bbox[2] - bbox[0]
-                title_x = (total_width - title_width) // 2
-                draw.text((title_x, 20), title_text, fill='white', font=title_font)
-            except:
-                draw.text((20, 20), f"🎮 {len(games)} Giochi Gratuiti", fill='white')
+            
+            # Titolo
+            font = ImageFont.load_default()
+            title_text = f"🎮 {len(games)} Giochi Gratuiti Disponibili"
+            bbox = draw.textbbox((0, 0), title_text, font=font)
+            title_width = bbox[2] - bbox[0]
+            title_x = (total_width - title_width) // 2
+            draw.text((title_x, 20), title_text, fill='white', font=font)
+            
+            # Sottotitolo
+            subtitle = f"Aggiornamento del {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
+            bbox = draw.textbbox((0, 0), subtitle, font=font)
+            subtitle_width = bbox[2] - bbox[0]
+            subtitle_x = (total_width - subtitle_width) // 2
+            draw.text((subtitle_x, 45), subtitle, fill='#B9BBBE', font=font)
             
             # Aggiungi copertine
             for i, game in enumerate(games):
@@ -154,116 +251,51 @@ class FreeGamesBot:
                 col = i % cols
                 
                 x = 20 + col * (cover_width + spacing)
-                y = 60 + row * (cover_height + spacing)
+                y = 80 + row * (cover_height + spacing)
                 
-                # Scarica e ridimensiona immagine
+                # Scarica immagine
                 cover = self.get_game_cover_image(game['title'], game['platform'])
                 if cover:
-                    cover = cover.resize((cover_width, cover_height))
                     collage.paste(cover, (x, y))
                 
-                # Aggiungi overlay con info
-                overlay = Image.new('RGBA', (cover_width, cover_height), (0, 0, 0, 128))
+                # Overlay con info
+                overlay = Image.new('RGBA', (cover_width, cover_height), (0, 0, 0, 120))
                 overlay_draw = ImageDraw.Draw(overlay)
                 
-                try:
-                    game_font = ImageFont.load_default()
-                    # Titolo gioco
-                    title_text = game['title'][:25] + "..." if len(game['title']) > 25 else game['title']
-                    overlay_draw.text((10, 10), title_text, fill='white', font=game_font)
-                    
-                    # Platform e genere
-                    info_text = f"{game['platform']} • {game['genre']}"
-                    overlay_draw.text((10, 100), info_text, fill='#7289DA', font=game_font)
-                    
-                    # Data scadenza
-                    date_text = f"Scade: {game['end_date']}"
-                    overlay_draw.text((10, 115), date_text, fill='#FFA500', font=game_font)
-                except:
-                    overlay_draw.text((10, 10), game['title'][:20], fill='white')
-                    overlay_draw.text((10, 100), game['platform'], fill='#7289DA')
+                # Titolo gioco
+                clean_title = self.clean_title(game['title'])
+                title_short = clean_title[:25] + "..." if len(clean_title) > 25 else clean_title
+                overlay_draw.text((10, 10), title_short, fill='white', font=font)
+                
+                # Platform e genere  
+                info_text = f"{game['platform']} • {game['genre']}"
+                overlay_draw.text((10, 100), info_text, fill='#7289DA', font=font)
+                
+                # Data scadenza
+                date_text = f"Scade: {game['end_date'][:10]}"  # Accorcia la data
+                overlay_draw.text((10, 115), date_text, fill='#FFA500', font=font)
                 
                 collage.paste(overlay, (x, y), overlay)
             
-            # Salva immagine
+            # Salva
             image_path = "games_collage.png"
-            collage.save(image_path, "PNG")
+            collage.save(image_path, "PNG", optimize=True)
+            logger.info(f"Collage creato: {image_path}")
             return image_path
             
         except Exception as e:
             logger.error(f"Errore creazione collage: {e}")
             return None
 
-    def get_real_description(self, title, platform, link):
-        """Ottiene la descrizione reale del gioco"""
-        try:
-            if platform == "Epic Games":
-                # Per Epic Games, prova a fare scraping della pagina
-                response = requests.get(link, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Cerca meta description
-                meta_desc = soup.find('meta', {'name': 'description'})
-                if meta_desc and meta_desc.get('content'):
-                    return meta_desc['content'][:150] + "..."
-                
-                # Cerca nel contenuto della pagina
-                desc_selectors = [
-                    '[data-testid="description"]',
-                    '.css-1vwkb5k',  # Epic description class
-                    '.css-16oh4oq'
-                ]
-                
-                for selector in desc_selectors:
-                    desc_elem = soup.select_one(selector)
-                    if desc_elem:
-                        text = desc_elem.get_text(strip=True)
-                        if len(text) > 20:
-                            return text[:200] + "..."
-            
-            elif "steam" in link.lower():
-                # Estrai Steam App ID
-                app_id_match = re.search(r'/app/(\d+)', link)
-                if app_id_match:
-                    app_id = app_id_match.group(1)
-                    steam_api_url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=italian"
-                    steam_response = requests.get(steam_api_url, timeout=10)
-                    steam_data = steam_response.json()
-                    
-                    if steam_data.get(app_id, {}).get("success"):
-                        game_data = steam_data[app_id]["data"]
-                        short_desc = game_data.get("short_description", "")
-                        if short_desc:
-                            return short_desc[:200] + "..." if len(short_desc) > 200 else short_desc
-            
-            # Descrizioni fallback basate su pattern di titolo
-            title_lower = title.lower()
-            if any(word in title_lower for word in ['train', 'sim']):
-                return "Simulatore di treni realistico con scenari dettagliati e controlli autentici."
-            elif any(word in title_lower for word in ['zombie', 'borg']):
-                return "Gioco d'azione ambientato in un mondo post-apocalittico pieno di zombie."
-            elif 'nightingale' in title_lower:
-                return "Gioco di sopravvivenza cooperativo in un mondo fantasy vittoriano pieno di creature magiche."
-            elif any(word in title_lower for word in ['whiskey', 'mafia']):
-                return "Avventura narrativa ambientata nel mondo della criminalità organizzata."
-            elif 'wednesday' in title_lower:
-                return "Avventura indie con atmosfere uniche e storytelling coinvolgente."
-            else:
-                return f"Gioco {self.get_genre_from_title(title).lower()} disponibile gratuitamente per tempo limitato."
-                
-        except Exception as e:
-            logger.warning(f"Errore recupero descrizione per {title}: {e}")
-            return f"Gioco {self.get_genre_from_title(title).lower()} gratuito con contenuti di qualità."
-
     def get_genre_from_title(self, title):
-        """Determina il genere dal titolo"""
+        """Determina genere dal titolo"""
         title_lower = title.lower()
         
         if any(word in title_lower for word in ['train', 'sim', 'simulator']):
             return "Simulazione"
-        elif any(word in title_lower for word in ['zombie', 'war', 'battle', 'fight']):
+        elif any(word in title_lower for word in ['zombie', 'war', 'battle', 'fight', 'shooter']):
             return "Azione"
-        elif any(word in title_lower for word in ['story', 'adventure', 'mystery']):
+        elif any(word in title_lower for word in ['story', 'adventure', 'mystery', 'narrative', 'mafia']):
             return "Avventura"
         elif any(word in title_lower for word in ['craft', 'build', 'survival']):
             return "Sopravvivenza"
@@ -305,32 +337,32 @@ class FreeGamesBot:
                     if not self.validate(link):
                         continue
                     
-                    # ID basato su titolo normalizzato
+                    # ID normalizzato
                     normalized_title = self.normalize_title(title)
                     gid = f"game_{normalized_title}"
+                    
+                    logger.info(f"Epic: '{title}' -> normalizzato: '{normalized_title}' -> ID: '{gid}'")
+                    
                     if gid in self.sent:
-                        logger.info(f"Epic game già inviato: {title} -> {normalized_title}")
+                        logger.info(f"Epic game già inviato: {title}")
                         continue
                     
-                    # Descrizione reale
-                    desc = self.get_real_description(title, "Epic Games", link)
+                    # Descrizione
+                    desc = g.get("description") or "Gioco gratuito per tempo limitato."
+                    desc = self.translate_description(desc)[:200] + "..." if len(desc) > 200 else desc
                     
                     # Genere
-                    categories = g.get("categories", [])
                     genre = self.get_genre_from_title(title)
+                    categories = g.get("categories", [])
                     if categories:
                         for cat in categories:
                             cat_path = cat.get("path", "").lower()
-                            if "action" in cat_path:
+                            if "survival" in cat_path:
+                                genre = "Sopravvivenza"
+                                break
+                            elif "action" in cat_path:
                                 genre = "Azione"
-                            elif "adventure" in cat_path:
-                                genre = "Avventura"
-                            elif "rpg" in cat_path:
-                                genre = "RPG"
-                            elif "strategy" in cat_path:
-                                genre = "Strategia"
-                            elif "simulation" in cat_path:
-                                genre = "Simulazione"
+                                break
                     
                     # Data fine
                     end = ""
@@ -344,7 +376,7 @@ class FreeGamesBot:
                     
                     out.append({
                         "id": gid,
-                        "title": title,
+                        "title": self.clean_title(title),
                         "description": desc,
                         "genre": genre,
                         "url": link,
@@ -355,55 +387,6 @@ class FreeGamesBot:
             logger.error(f"Errore Epic Games: {e}")
         return out
 
-    async def fetch_steam(self):
-        out = []
-        try:
-            feed = feedparser.parse("https://isthereanydeal.com/rss/deals/free/")
-            for e in feed.entries[:5]:
-                title = e.title.strip()
-                
-                # Pulisci il titolo
-                if title.lower().endswith(" free"):
-                    title = title[:-5].strip()
-                
-                soup = BeautifulSoup(e.summary, "html.parser")
-                links = [
-                    a["href"]
-                    for a in soup.find_all("a", href=True)
-                    if "store.steampowered.com" in a["href"]
-                ]
-                
-                if not links:
-                    continue
-                
-                link = links[0]
-                if not self.validate(link):
-                    continue
-                
-                # ID basato su titolo normalizzato
-                normalized_title = self.normalize_title(title)
-                gid = f"game_{normalized_title}"
-                if gid in self.sent:
-                    logger.info(f"Steam game già inviato: {title} -> {normalized_title}")
-                    continue
-                
-                # Descrizione reale
-                desc = self.get_real_description(title, "Steam", link)
-                genre = self.get_genre_from_title(title)
-                
-                out.append({
-                    "id": gid,
-                    "title": title,
-                    "description": desc,
-                    "genre": genre,
-                    "url": link,
-                    "platform": "Steam",
-                    "end_date": "Fino ad esaurimento"
-                })
-        except Exception as e:
-            logger.error(f"Errore Steam: {e}")
-        return out
-
     async def fetch_gamer(self):
         out = []
         try:
@@ -412,32 +395,33 @@ class FreeGamesBot:
                 timeout=15
             ).json()
             
-            for g in data[:5]:
+            for g in data[:10]:  # Aumentato per più varietà
                 title = g.get("title", "").strip()
                 
-                # Rimuovi "(Epic Games)" dal titolo se presente
-                title = re.sub(r'\s*\([^)]*\)\s*', '', title).strip()
+                if not title:
+                    continue
                 
                 link = g.get("open_giveaway") or g.get("gamerpower_url")
-                if not title or not link:
+                if not link or not self.validate(link):
                     continue
                 
-                if not self.validate(link):
-                    continue
-                
-                # ID basato su titolo normalizzato
+                # ID normalizzato  
                 normalized_title = self.normalize_title(title)
                 gid = f"game_{normalized_title}"
+                
+                logger.info(f"GamerPower: '{title}' -> normalizzato: '{normalized_title}' -> ID: '{gid}'")
+                
                 if gid in self.sent:
-                    logger.info(f"GamerPower game già inviato: {title} -> {normalized_title}")
+                    logger.info(f"GamerPower game già inviato: {title}")
                     continue
                 
-                # Descrizione reale
+                # Descrizione tradotta
                 api_desc = g.get("description", "")
                 if api_desc and len(api_desc) > 20:
-                    desc = api_desc[:200] + "..." if len(api_desc) > 200 else api_desc
+                    desc = self.translate_description(api_desc)
+                    desc = desc[:200] + "..." if len(desc) > 200 else desc
                 else:
-                    desc = self.get_real_description(title, "GamerPower", link)
+                    desc = self.get_custom_description_by_title(title)
                 
                 genre = self.get_genre_from_title(title)
                 
@@ -453,7 +437,7 @@ class FreeGamesBot:
                 
                 out.append({
                     "id": gid,
-                    "title": title,
+                    "title": self.clean_title(title),
                     "description": desc,
                     "genre": genre,
                     "url": link,
@@ -464,17 +448,20 @@ class FreeGamesBot:
             logger.error(f"Errore GamerPower: {e}")
         return out
 
+    async def fetch_steam(self):
+        return []  # Semplificato per focus sui problemi principali
+
     async def fetch_prime(self):
-        return []  # Semplificato per ora
+        return []
 
     async def fetch_gog(self):
-        return []  # Semplificato per ora
+        return []
 
     async def send_hourly_update(self):
         games = []
         games += await self.fetch_epic()
-        games += await self.fetch_steam()
         games += await self.fetch_gamer()
+        games += await self.fetch_steam()
         games += await self.fetch_prime()
         games += await self.fetch_gog()
 
@@ -482,22 +469,22 @@ class FreeGamesBot:
             logger.info("Nessun nuovo gioco gratuito trovato.")
             return
 
-        # Debug: mostra normalizzazioni
+        # Debug normalizzazioni
+        logger.info("=== DEBUG NORMALIZZAZIONI ===")
         for game in games:
-            logger.info(f"Gioco: {game['title']} -> Normalizzato: {self.normalize_title(game['title'])} -> ID: {game['id']}")
-
-        # Aggiungi i nuovi giochi al set dei giochi già inviati
+            logger.info(f"'{game['title']}' -> ID: '{game['id']}'")
+        
+        # Aggiungi a sent
         for game in games:
             self.sent.add(game["id"])
         
-        # Salva il file con i giochi già inviati
         self.save_sent()
-        logger.info(f"Salvati {len(games)} nuovi giochi nel tracking duplicati.")
+        logger.info(f"Salvati {len(games)} giochi nel tracking.")
 
-        # Crea collage immagini
+        # Crea collage
         collage_path = self.create_games_collage(games)
 
-        # Testo del messaggio senza emojii problematici
+        # Messaggio
         parts = ["*Nuovi Giochi Gratuiti*\n"]
         for g in games:
             parts.append(
@@ -510,10 +497,11 @@ class FreeGamesBot:
 
         text = "\n".join(parts)
 
-        # Invia con collage se disponibile
+        # Invia con immagine
         if collage_path and os.path.exists(collage_path):
             try:
                 with open(collage_path, 'rb') as photo:
+                    # Canale principale
                     await self.bot.send_photo(
                         chat_id=CHANNEL_USERNAME,
                         photo=photo,
@@ -521,6 +509,7 @@ class FreeGamesBot:
                         parse_mode=ParseMode.MARKDOWN
                     )
                     
+                    # Chat amici se configurata
                     if FRIENDS_CHAT_ID:
                         photo.seek(0)
                         await self.bot.send_photo(
@@ -530,24 +519,25 @@ class FreeGamesBot:
                             parse_mode=ParseMode.MARKDOWN
                         )
                 
-                # Rimuovi file temporaneo
+                logger.info("✅ Messaggio inviato CON collage immagini")
+                
+                # Pulisci file temporaneo
                 os.remove(collage_path)
-                logger.info("Inviato messaggio con collage immagini")
                 
             except Exception as e:
                 logger.error(f"Errore invio con immagine: {e}")
-                # Fallback senza immagine
                 await self._send_text_only(text)
         else:
+            logger.warning("❌ Collage non creato, invio solo testo")
             await self._send_text_only(text)
 
     async def _send_text_only(self, text):
-        """Invia solo testo senza immagine"""
+        """Fallback senza immagine"""
         await self.bot.send_message(
             chat_id=CHANNEL_USERNAME,
             text=text,
             parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True  # Disabilita anteprima link
+            disable_web_page_preview=True
         )
 
         if FRIENDS_CHAT_ID:
@@ -557,6 +547,8 @@ class FreeGamesBot:
                 parse_mode=ParseMode.MARKDOWN,
                 disable_web_page_preview=True
             )
+        
+        logger.info("✅ Messaggio inviato SENZA immagine")
 
 async def main():
     bot = FreeGamesBot()
