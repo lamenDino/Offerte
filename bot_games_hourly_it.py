@@ -242,7 +242,7 @@ class FreeGamesBot:
             return placeholder
 
     def create_games_collage(self, games):
-        """Crea collage con copertine dei giochi"""
+        """Crea collage con copertine dei giochi - SENZA EMOJI per evitare errori encoding"""
         try:
             if not games:
                 logger.warning("Nessun gioco per creare collage")
@@ -263,9 +263,9 @@ class FreeGamesBot:
             collage = Image.new('RGB', (total_width, total_height), color='#36393F')
             draw = ImageDraw.Draw(collage)
             
-            # Titolo principale
+            # Titolo principale SENZA EMOJI
             font = ImageFont.load_default()
-            title_text = f"🎮 {len(games)} Giochi Gratuiti Disponibili 🎮"
+            title_text = f"{len(games)} Giochi Gratuiti Disponibili"
             bbox = draw.textbbox((0, 0), title_text, font=font)
             title_width = bbox[2] - bbox[0]
             title_x = (total_width - title_width) // 2
@@ -293,7 +293,7 @@ class FreeGamesBot:
                 if cover:
                     collage.paste(cover, (x, y))
                 
-                # Overlay con info
+                # Overlay con info SENZA EMOJI
                 overlay = Image.new('RGBA', (cover_width, cover_height), (0, 0, 0, 120))
                 overlay_draw = ImageDraw.Draw(overlay)
                 
@@ -302,12 +302,13 @@ class FreeGamesBot:
                 title_short = clean_title[:25] + "..." if len(clean_title) > 25 else clean_title
                 overlay_draw.text((10, 10), title_short, fill='white', font=font)
                 
-                # Platform e genere  
-                info_text = f"{game['platform']} • {game['genre']}"
+                # Platform e genere SENZA EMOJI
+                info_text = f"{game['platform']} - {game['genre']}"
                 overlay_draw.text((10, 100), info_text, fill='#7289DA', font=font)
                 
-                # Data scadenza
-                date_text = f"Scade: {game['end_date'][:10] if len(game['end_date']) > 10 else game['end_date']}"
+                # Data scadenza SENZA EMOJI
+                date_short = game['end_date'][:16] if len(game['end_date']) > 16 else game['end_date']
+                date_text = f"Scade: {date_short}"
                 overlay_draw.text((10, 115), date_text, fill='#FFA500', font=font)
                 
                 collage.paste(overlay, (x, y), overlay)
@@ -315,11 +316,11 @@ class FreeGamesBot:
             # Salva
             image_path = "games_collage.png"
             collage.save(image_path, "PNG", optimize=True, quality=85)
-            logger.info(f"✅ Collage creato: {image_path}")
+            logger.info(f"Collage creato: {image_path}")
             return image_path
             
         except Exception as e:
-            logger.error(f"❌ Errore creazione collage: {e}")
+            logger.error(f"Errore creazione collage: {e}")
             return None
 
     def get_genre_from_title(self, title):
@@ -489,13 +490,13 @@ class FreeGamesBot:
         return out
 
     async def fetch_steam(self):
-        return []  # Semplificato
+        return []
 
     async def fetch_prime(self):
-        return []  # Semplificato
+        return []
 
     async def fetch_gog(self):
-        return []  # Semplificato
+        return []
 
     async def send_hourly_update(self):
         games = []
@@ -522,7 +523,7 @@ class FreeGamesBot:
         collage_path = self.create_games_collage(games)
         
         if not collage_path or not os.path.exists(collage_path):
-            logger.error("❌ ERRORE CRITICO: Collage non creato! Interrompo l'invio.")
+            logger.error("ERRORE CRITICO: Collage non creato! Interrompo l'invio.")
             return
 
         # Messaggio con formattazione e icone
